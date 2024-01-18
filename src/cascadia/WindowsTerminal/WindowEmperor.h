@@ -60,7 +60,9 @@ private:
     void _decrementWindowCount();
 
     void _becomeMonarch();
-    void _numberOfWindowsChanged(const winrt::Windows::Foundation::IInspectable&, const winrt::Windows::Foundation::IInspectable&);
+    void _windowCreated(const winrt::Windows::Foundation::IInspectable&, const winrt::Windows::Foundation::IInspectable&);
+    void _windowClosed(const winrt::Windows::Foundation::IInspectable&, const winrt::Windows::Foundation::IInspectable&);
+    void _numberOfWindowsChanged();
     void _quitAllRequested(const winrt::Windows::Foundation::IInspectable&,
                            const winrt::Microsoft::Terminal::Remoting::QuitAllRequestedArgs&);
 

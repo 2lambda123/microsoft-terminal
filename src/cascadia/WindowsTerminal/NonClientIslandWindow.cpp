@@ -346,6 +346,14 @@ void NonClientIslandWindow::OnAppInitialized()
     IslandWindow::OnAppInitialized();
 }
 
+void NonClientIslandWindow::Refrigerate() noexcept
+{
+    IslandWindow::Refrigerate();
+
+    // Revoke all our XAML callbacks.
+    _callbacks = {};
+}
+
 bool NonClientIslandWindow::Initialize()
 {
     const bool coldInit = IslandWindow::Initialize();

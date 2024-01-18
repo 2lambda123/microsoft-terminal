@@ -15,13 +15,13 @@ WindowThread::WindowThread(winrt::TerminalApp::AppLogic logic, WindowManager man
 
 void WindowThread::CreateHost(WindowRequestedArgs args)
 {
-    winrt::init_apartment(winrt::apartment_type::single_threaded);
-
     // Start the AppHost HERE, on the actual thread we want XAML to run on
     _peasant = _manager.CreatePeasant(args);
     _host = std::make_shared<::AppHost>(_appLogic, std::move(args), _manager, _peasant);
 
     _UpdateSettingsRequestedToken = _host->UpdateSettingsRequested([this]() { _UpdateSettingsRequestedHandlers(); });
+
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     // Initialize the xaml content. This must be called AFTER the
     // WindowsXamlManager is initialized.
@@ -54,6 +54,13 @@ void WindowThread::RundownForExit()
         _host->UpdateSettingsRequested(_UpdateSettingsRequestedToken);
         _host->Close();
     }
+    if (_warmWindow)
+    {
+        // If we have a _warmWindow, we're a refrigerated thread without a
+        // AppHost in control of the window. Manually close the window
+        // ourselves, to free the DesktopWindowXamlSource.
+        _warmWindow->Close();
+    }
 
     // !! LOAD BEARING !!
     //
@@ -74,7 +81,10 @@ void WindowThread::RundownForExit()
 //   that can be re-used.
 void WindowThread::Refrigerate()
 {
-    _manager.SignalClose(_peasant);
+    _host->UpdateSettingsRequested(_UpdateSettingsRequestedToken);
+    // keep a reference to the HWND and DesktopWindowXamlSource alive.
+    _warmWindow = std::move(_host->Refrigerate());
+    _host = nullptr;
 }
 
 // Method Description:
@@ -86,8 +96,9 @@ void WindowThread::Microwave(WindowRequestedArgs args)
 {
     _dispatcher.TryEnqueue(winrt::Windows::System::DispatcherQueuePriority::Normal, [this, args = std::move(args)]() {
         _peasant = _manager.CreatePeasant(args);
-        _manager.AddPeasant(_peasant);
-        _host->Microwave(std::move(args), _peasant);
+        _host = std::make_shared<::AppHost>(_appLogic, std::move(args), _manager, _peasant, std::move(_warmWindow));
+        _UpdateSettingsRequestedToken = _host->UpdateSettingsRequested([this]() { _UpdateSettingsRequestedHandlers(); });
+        _host->Initialize();
     });
 }
 

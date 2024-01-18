@@ -59,6 +59,29 @@ void IslandWindow::Close()
     }
 }
 
+// Clear out any state that might be associated with this app instance, so that
+// we can later re-use this HWND for another instance.
+//
+// This doesn't actually close out our HWND or DesktopWindowXamlSource, but it
+// will remove all our content, and SW_HIDE the window, so it isn't accessible.
+void IslandWindow::Refrigerate() noexcept
+{
+    // Similar to in Close - unset our HWND's user data. We'll re-set this when
+    // we get re-heated, so that while we're refrigerated, we won't have
+    // unexpected callbacks into us while we don't have content.
+    //
+    // This pointer will get re-set in _warmInitialize
+    SetWindowLongPtr(_window.get(), GWLP_USERDATA, 0);
+
+    _resetSystemMenu();
+
+    _pfnCreateCallback = nullptr;
+    _pfnSnapDimensionCallback = nullptr;
+    
+    _rootGrid.Children().Clear();
+    ShowWindow(_window.get(), SW_HIDE);
+}
+
 HWND IslandWindow::GetInteropHandle() const
 {
     return _interopWindowHandle;

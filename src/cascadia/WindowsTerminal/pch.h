@@ -59,7 +59,6 @@ Abstract:
 //  * Media for ScaleTransform
 //  * ApplicationModel for finding the path to wt.exe
 //  * Primitives for Popup (used by GetOpenPopupsForXamlRoot)
-#include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>

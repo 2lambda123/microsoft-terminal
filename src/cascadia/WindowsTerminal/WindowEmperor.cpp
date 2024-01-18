@@ -4,7 +4,6 @@
 #include "pch.h"
 #include "WindowEmperor.h"
 
-#include <shlobj_core.h>
 #include <til/env.h>
 
 #include "../inc/WindowingBehavior.h"
@@ -280,8 +279,8 @@ void WindowEmperor::_becomeMonarch()
     // Set the number of open windows (so we know if we are the last window)
     // and subscribe for updates if there are any changes to that number.
 
-    _revokers.WindowCreated = _manager.WindowCreated(winrt::auto_revoke, { this, &WindowEmperor::_numberOfWindowsChanged });
-    _revokers.WindowClosed = _manager.WindowClosed(winrt::auto_revoke, { this, &WindowEmperor::_numberOfWindowsChanged });
+    _revokers.WindowCreated = _manager.WindowCreated(winrt::auto_revoke, { this, &WindowEmperor::_windowCreated });
+    _revokers.WindowClosed = _manager.WindowClosed(winrt::auto_revoke, { this, &WindowEmperor::_windowClosed });
 
     // If the monarch receives a QuitAll event it will signal this event to be
     // ran before each peasant is closed.
@@ -293,44 +292,50 @@ void WindowEmperor::_becomeMonarch()
     _getWindowLayoutThrottler.value()();
 }
 
-void WindowEmperor::_numberOfWindowsChanged(const winrt::Windows::Foundation::IInspectable&,
-                                            const winrt::Windows::Foundation::IInspectable& value)
+void WindowEmperor::_windowCreated(const winrt::Windows::Foundation::IInspectable&, const winrt::Windows::Foundation::IInspectable&)
+{
+    _numberOfWindowsChanged();
+}
+
+void WindowEmperor::_windowClosed(const winrt::Windows::Foundation::IInspectable&, const winrt::Windows::Foundation::IInspectable& value)
 {
     const auto peasantID = winrt::unbox_value<uint64_t>(value);
+    std::shared_ptr<WindowThread> window;
 
+    // Below we'll lock _oldThreads. It would be possible to do it within this block so that we can avoid the window variable above.
+    // But holding both locks simultaneously may result in an ABBA deadlock. Bumping reference counts is cheap and so this is a good solution.
     {
-        std::shared_ptr<WindowThread> window;
+        const auto windows = _windows.lock();
+        const auto it = std::find_if(windows->begin(), windows->end(), [&](const auto& w) {
+            return w->PeasantID() == peasantID;
+        });
 
-        // Below we'll lock _oldThreads. It would be possible to do it within this block so that we can avoid the window variable above.
-        // But holding both locks simultaneously may result in an ABBA deadlock. Bumping reference counts is cheap and so this is a good solution.
+        if (it == windows->end())
         {
-            const auto windows = _windows.lock();
-            const auto it = std::find_if(windows->begin(), windows->end(), [&](const auto& w) {
-                return w->PeasantID() == peasantID;
-            });
-
-            if (it == windows->end())
-            {
-                return;
-            }
-
-            window = *it;
-            windows->erase(it);
+            return;
         }
 
-        _decrementWindowCount();
-
-        if (Utils::IsWindows11())
-        {
-            PostQuitMessage(0);
-        }
-        else
-        {
-            //ShowWindow(GetActiveWindow(), SW_HIDE);
-            _oldThreads.lock()->push_back(std::move(window));
-        }
+        window = *it;
+        windows->erase(it);
     }
 
+    _decrementWindowCount();
+
+    if (Utils::IsWindows11())
+    {
+        PostQuitMessage(0);
+    }
+    else
+    {
+        window->Refrigerate();
+        _oldThreads.lock()->push_back(std::move(window));
+    }
+
+    _numberOfWindowsChanged();
+}
+
+void WindowEmperor::_numberOfWindowsChanged()
+{
     if (_getWindowLayoutThrottler)
     {
         _getWindowLayoutThrottler.value()();

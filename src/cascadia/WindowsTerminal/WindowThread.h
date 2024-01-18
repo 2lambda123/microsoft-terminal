@@ -34,6 +34,8 @@ private:
     std::shared_ptr<::AppHost> _host{ nullptr };
     winrt::event_token _UpdateSettingsRequestedToken;
 
+    std::unique_ptr<::IslandWindow> _warmWindow{ nullptr };
+
     int _messagePump();
     void _pumpRemainingXamlMessages();
 };

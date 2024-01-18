@@ -1045,7 +1045,6 @@ namespace winrt::TerminalApp::implementation
 
         // This is called in AppHost::ctor(), before we've created the window
         // (or called TerminalWindow::Initialize)
-        _appArgs.FullResetState();
         const auto result = _appArgs.ParseArgs(args);
         if (result == 0)
         {

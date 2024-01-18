@@ -33,9 +33,10 @@ constexpr const auto FrameUpdateInterval = std::chrono::milliseconds(16);
 AppHost::AppHost(const winrt::TerminalApp::AppLogic& logic,
                  winrt::Microsoft::Terminal::Remoting::WindowRequestedArgs args,
                  const Remoting::WindowManager& manager,
-                 const Remoting::Peasant& peasant) noexcept :
+                 const Remoting::Peasant& peasant,
+                 std::unique_ptr<IslandWindow> window) noexcept :
     _appLogic{ logic },
-    _windowLogic{ logic.CreateNewWindow() },
+    _windowLogic{ nullptr }, // don't make one, we're going to take a ref on app's
     _windowManager{ manager },
     _peasant{ peasant },
     _desktopManager{ winrt::try_create_instance<IVirtualDesktopManager>(__uuidof(VirtualDesktopManager)) }
@@ -49,13 +50,21 @@ AppHost::AppHost(const winrt::TerminalApp::AppLogic& logic,
     // _HandleCommandlineArgs will create a _windowLogic
     _useNonClientArea = _windowLogic.GetShowTabsInTitlebar();
 
-    if (_useNonClientArea)
+    const bool isWarmStart = window != nullptr;
+    if (isWarmStart)
     {
-        _window = std::make_unique<NonClientIslandWindow>(_windowLogic.GetRequestedTheme());
+        _window = std::move(window);
     }
     else
     {
-        _window = std::make_unique<IslandWindow>();
+        if (_useNonClientArea)
+        {
+            _window = std::make_unique<NonClientIslandWindow>(_windowLogic.GetRequestedTheme());
+        }
+        else
+        {
+            _window = std::make_unique<IslandWindow>();
+        }
     }
 
     // Update our own internal state tracking if we're in quake mode or not.
@@ -135,6 +144,10 @@ void AppHost::s_DisplayMessageBox(const winrt::TerminalApp::ParseCommandlineResu
 // - <none>
 void AppHost::_HandleCommandlineArgs(const Remoting::WindowRequestedArgs& windowArgs)
 {
+    // We did want to make a window, so let's instantiate it here.
+    // We don't have XAML yet, but we do have other stuff.
+    _windowLogic = _appLogic.CreateNewWindow();
+
     if (_peasant)
     {
         const auto& args{ _peasant.InitialArgs() };
@@ -153,7 +166,11 @@ void AppHost::_HandleCommandlineArgs(const Remoting::WindowRequestedArgs& window
 
                 if (_windowLogic.ShouldExitEarly())
                 {
+#ifdef NDEBUG
+                    TerminateProcess(GetCurrentProcess(), gsl::narrow_cast<UINT>(result));
+#else
                     std::quick_exit(result);
+#endif
                 }
             }
         }
@@ -328,7 +345,10 @@ void AppHost::Initialize()
     _revokers.ChangeMaximizeRequested = _windowLogic.ChangeMaximizeRequested(winrt::auto_revoke, { this, &AppHost::_ChangeMaximizeRequested });
 
     _windowCallbacks.MaximizeChanged = _window->MaximizeChanged([this](bool newMaximize) {
-        _windowLogic.Maximized(newMaximize);
+        if (_windowLogic)
+        {
+            _windowLogic.Maximized(newMaximize);
+        }
     });
 
     _windowCallbacks.AutomaticShutdownRequested = _window->AutomaticShutdownRequested([this]() {
@@ -456,12 +476,31 @@ void AppHost::_revokeWindowCallbacks()
     _window->AutomaticShutdownRequested(_windowCallbacks.AutomaticShutdownRequested);
 }
 
-void AppHost::Microwave(winrt::Microsoft::Terminal::Remoting::WindowRequestedArgs args, winrt::Microsoft::Terminal::Remoting::Peasant peasant)
+// revoke our callbacks, discard our XAML content (TerminalWindow &
+// TerminalPage), and hand back our IslandWindow. This does _not_ close the XAML
+// island for this thread. We should not be re-used after this, and our caller
+// can destruct us like they normally would during a close. The returned
+// IslandWindow will retain ownership of the DesktopWindowXamlSource, for later
+// reuse.
+[[nodiscard]] std::unique_ptr<IslandWindow> AppHost::Refrigerate()
 {
-    _peasant = std::move(peasant);
-    _HandleCommandlineArgs(args);
-    Initialize();
-    ShowWindow(GetActiveWindow(), _launchShowWindowCommand);
+    // After calling _window->Close() we should avoid creating more WinUI related actions.
+    // I suspect WinUI wouldn't like that very much. As such unregister all event handlers first.
+    _revokers = {};
+    _showHideWindowThrottler.reset();
+    _stopFrameTimer();
+    _revokeWindowCallbacks();
+
+    // DO NOT CLOSE THE WINDOW
+    _window->Refrigerate();
+
+    if (_windowLogic)
+    {
+        _windowLogic.DismissDialog();
+        _windowLogic = nullptr;
+    }
+
+    return std::move(_window);
 }
 
 // Method Description:
