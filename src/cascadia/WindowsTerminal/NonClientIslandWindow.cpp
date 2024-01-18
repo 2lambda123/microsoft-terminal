@@ -26,6 +26,11 @@ NonClientIslandWindow::NonClientIslandWindow(const ElementTheme& requestedTheme)
 {
 }
 
+NonClientIslandWindow::~NonClientIslandWindow()
+{
+    Close();
+}
+
 void NonClientIslandWindow::Close()
 {
     // Avoid further callbacks into XAML/WinUI-land after we've Close()d the DesktopWindowXamlSource
@@ -339,14 +344,6 @@ void NonClientIslandWindow::_OnDragBarSizeChanged(winrt::Windows::Foundation::II
 void NonClientIslandWindow::OnAppInitialized()
 {
     IslandWindow::OnAppInitialized();
-}
-
-void NonClientIslandWindow::Refrigerate() noexcept
-{
-    IslandWindow::Refrigerate();
-
-    // Revoke all our XAML callbacks.
-    _callbacks = {};
 }
 
 bool NonClientIslandWindow::Initialize()

@@ -33,10 +33,9 @@ constexpr const auto FrameUpdateInterval = std::chrono::milliseconds(16);
 AppHost::AppHost(const winrt::TerminalApp::AppLogic& logic,
                  winrt::Microsoft::Terminal::Remoting::WindowRequestedArgs args,
                  const Remoting::WindowManager& manager,
-                 const Remoting::Peasant& peasant,
-                 std::unique_ptr<IslandWindow> window) noexcept :
+                 const Remoting::Peasant& peasant) noexcept :
     _appLogic{ logic },
-    _windowLogic{ nullptr }, // don't make one, we're going to take a ref on app's
+    _windowLogic{ logic.CreateNewWindow() },
     _windowManager{ manager },
     _peasant{ peasant },
     _desktopManager{ winrt::try_create_instance<IVirtualDesktopManager>(__uuidof(VirtualDesktopManager)) }
@@ -50,21 +49,13 @@ AppHost::AppHost(const winrt::TerminalApp::AppLogic& logic,
     // _HandleCommandlineArgs will create a _windowLogic
     _useNonClientArea = _windowLogic.GetShowTabsInTitlebar();
 
-    const bool isWarmStart = window != nullptr;
-    if (isWarmStart)
+    if (_useNonClientArea)
     {
-        _window = std::move(window);
+        _window = std::make_unique<NonClientIslandWindow>(_windowLogic.GetRequestedTheme());
     }
     else
     {
-        if (_useNonClientArea)
-        {
-            _window = std::make_unique<NonClientIslandWindow>(_windowLogic.GetRequestedTheme());
-        }
-        else
-        {
-            _window = std::make_unique<IslandWindow>();
-        }
+        _window = std::make_unique<IslandWindow>();
     }
 
     // Update our own internal state tracking if we're in quake mode or not.
@@ -144,10 +135,6 @@ void AppHost::s_DisplayMessageBox(const winrt::TerminalApp::ParseCommandlineResu
 // - <none>
 void AppHost::_HandleCommandlineArgs(const Remoting::WindowRequestedArgs& windowArgs)
 {
-    // We did want to make a window, so let's instantiate it here.
-    // We don't have XAML yet, but we do have other stuff.
-    _windowLogic = _appLogic.CreateNewWindow();
-
     if (_peasant)
     {
         const auto& args{ _peasant.InitialArgs() };
@@ -166,7 +153,7 @@ void AppHost::_HandleCommandlineArgs(const Remoting::WindowRequestedArgs& window
 
                 if (_windowLogic.ShouldExitEarly())
                 {
-                    ExitThread(result);
+                    std::quick_exit(result);
                 }
             }
         }
@@ -341,10 +328,7 @@ void AppHost::Initialize()
     _revokers.ChangeMaximizeRequested = _windowLogic.ChangeMaximizeRequested(winrt::auto_revoke, { this, &AppHost::_ChangeMaximizeRequested });
 
     _windowCallbacks.MaximizeChanged = _window->MaximizeChanged([this](bool newMaximize) {
-        if (_windowLogic)
-        {
-            _windowLogic.Maximized(newMaximize);
-        }
+        _windowLogic.Maximized(newMaximize);
     });
 
     _windowCallbacks.AutomaticShutdownRequested = _window->AutomaticShutdownRequested([this]() {
@@ -472,31 +456,12 @@ void AppHost::_revokeWindowCallbacks()
     _window->AutomaticShutdownRequested(_windowCallbacks.AutomaticShutdownRequested);
 }
 
-// revoke our callbacks, discard our XAML content (TerminalWindow &
-// TerminalPage), and hand back our IslandWindow. This does _not_ close the XAML
-// island for this thread. We should not be re-used after this, and our caller
-// can destruct us like they normally would during a close. The returned
-// IslandWindow will retain ownership of the DesktopWindowXamlSource, for later
-// reuse.
-[[nodiscard]] std::unique_ptr<IslandWindow> AppHost::Refrigerate()
+void AppHost::Microwave(winrt::Microsoft::Terminal::Remoting::WindowRequestedArgs args, winrt::Microsoft::Terminal::Remoting::Peasant peasant)
 {
-    // After calling _window->Close() we should avoid creating more WinUI related actions.
-    // I suspect WinUI wouldn't like that very much. As such unregister all event handlers first.
-    _revokers = {};
-    _showHideWindowThrottler.reset();
-    _stopFrameTimer();
-    _revokeWindowCallbacks();
-
-    // DO NOT CLOSE THE WINDOW
-    _window->Refrigerate();
-
-    if (_windowLogic)
-    {
-        _windowLogic.DismissDialog();
-        _windowLogic = nullptr;
-    }
-
-    return std::move(_window);
+    _peasant = std::move(peasant);
+    _HandleCommandlineArgs(args);
+    Initialize();
+    ShowWindow(GetActiveWindow(), _launchShowWindowCommand);
 }
 
 // Method Description:
@@ -538,23 +503,10 @@ void AppHost::LastTabClosed(const winrt::Windows::Foundation::IInspectable& /*se
     {
         _windowLogic.ClearPersistedWindowState();
     }
-
-    // If the user closes the last tab, in the last window, _by closing the tab_
-    // (not by closing the whole window), we need to manually persist an empty
-    // window state here. That will cause the terminal to re-open with the usual
-    // settings (not the persisted state)
-    if (args.ClearPersistedState() &&
-        _windowManager.GetNumberOfPeasants() == 1)
-    {
-        _windowLogic.ClearPersistedWindowState();
-    }
-
     // Remove ourself from the list of peasants so that we aren't included in
     // any future requests. This will also mean we block until any existing
     // event handler finishes.
     _windowManager.SignalClose(_peasant);
-
-    PostQuitMessage(0);
 }
 
 LaunchPosition AppHost::_GetWindowLaunchPosition()

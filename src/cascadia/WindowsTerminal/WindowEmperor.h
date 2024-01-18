@@ -27,7 +27,7 @@ public:
     ~WindowEmperor();
     void WaitForWindows();
 
-    bool HandleCommandlineArgs();
+    bool HandleCommandlineArgs(int nCmdShow);
 
 private:
     void _createNewWindowThread(const winrt::Microsoft::Terminal::Remoting::WindowRequestedArgs& args);
@@ -57,7 +57,6 @@ private:
     bool _quitting{ false };
 
     void _windowStartedHandlerPostXAML(const std::shared_ptr<WindowThread>& sender);
-    void _removeWindow(uint64_t senderID);
     void _decrementWindowCount();
 
     void _becomeMonarch();

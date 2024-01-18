@@ -23,8 +23,6 @@ public:
     virtual void MakeWindow() noexcept;
     virtual void Close();
 
-    virtual void Refrigerate() noexcept;
-
     virtual void OnSize(const UINT width, const UINT height);
     HWND GetInteropHandle() const;
 

@@ -48,7 +48,7 @@ Abstract:
 #include <wil/cppwinrt.h>
 
 // Needed just for XamlIslands to work at all:
-#include <winrt/Windows.system.h>
+#include <winrt/Windows.System.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
@@ -59,11 +59,12 @@ Abstract:
 //  * Media for ScaleTransform
 //  * ApplicationModel for finding the path to wt.exe
 //  * Primitives for Popup (used by GetOpenPopupsForXamlRoot)
+#include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Data.h>
-#include <winrt/Windows.ui.xaml.media.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include <winrt/Windows.UI.Composition.h>
